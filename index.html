@@ -102,7 +102,6 @@
   .done .big{font-size:60px;line-height:1}
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 </head>
 <body>
 <header class="top">
@@ -187,7 +186,7 @@
 <div class="bar">
   <div class="who"><label for="name">이름</label><input type="text" id="name" maxlength="10" placeholder="예) 홍길동"></div>
   <span class="status" id="saved"></span>
-  <button class="btn primary" id="submit">PDF로 저장</button>
+  <button class="btn primary" id="submit">그림으로 저장</button>
 </div>
 
 <div class="modal" id="m-school" role="dialog" aria-modal="true" aria-labelledby="m-school-t">
@@ -209,7 +208,7 @@
     <p class="missing" id="m-msg"></p>
     <div class="actions">
       <button class="btn ghost" id="m-back">더 고칠래요</button>
-      <button class="btn primary" id="m-ok">PDF 저장</button>
+      <button class="btn primary" id="m-ok">그림 저장</button>
     </div>
   </div>
 </div>
@@ -217,7 +216,7 @@
 <div class="modal" id="m-done" role="dialog" aria-modal="true">
   <div class="dialog done">
     <div class="big">📰</div>
-    <h3 id="done-t">PDF로 저장했어요!</h3>
+    <h3 id="done-t">그림으로 저장했어요!</h3>
     <p id="done-msg"></p>
     <div class="actions" style="justify-content:center"><button class="btn ghost" id="d-close">닫기</button></div>
   </div>
@@ -373,7 +372,7 @@ $('m-back').onclick=()=>close('m-check');
 let downloads=null;
 (async()=>{ try{ downloads = window.claude ? await window.claude.use('downloads') : null; }catch(e){ downloads=null; } })();
 
-async function makePdf(){
+async function makeImage(){
   await document.fonts.ready;
   const src=document.querySelector('.paper');
   const holder=document.createElement('div');
@@ -381,33 +380,16 @@ async function makePdf(){
   const clone=src.cloneNode(true); clone.classList.add('exporting'); clone.style.background='#fff';
   holder.appendChild(clone); document.body.appendChild(holder);
   try{
-    const canvas=await html2canvas(clone,{scale:2,backgroundColor:'#ffffff',useCORS:true});
-    const { jsPDF }=window.jspdf;
-    const pdf=new jsPDF({unit:'mm',format:'a4',orientation:'portrait'});
-    const M=12, pw=210-M*2, ph=297-M*2;
-    const pxPerMm=canvas.width/pw, pagePx=Math.floor(ph*pxPerMm);
-    // 쪽이 나뉠 때 글줄이 잘리지 않도록, 자르는 위치를 줄 사이의 빈 줄(흰 픽셀 행)로 올린다
-    const ctx=canvas.getContext('2d');
-    function cutAt(y){
-      const want=y+pagePx; if(want>=canvas.height) return canvas.height;
-      const look=Math.min(Math.floor(pagePx*0.3), want-y-1);
-      const data=ctx.getImageData(0,want-look,canvas.width,look).data;
-      for(let r=look-1;r>=0;r--){
-        let blank=true;
-        for(let x=0;x<canvas.width;x+=2){ const i=(r*canvas.width+x)*4; if(data[i]<245||data[i+1]<245||data[i+2]<245){blank=false;break;} }
-        if(blank) return want-look+r+1;
-      }
-      return want;
-    }
-    for(let y=0, first=true, next; y<canvas.height; y=next, first=false){
-      next=cutAt(y);
-      const h=next-y;
-      const part=document.createElement('canvas'); part.width=canvas.width; part.height=h;
-      part.getContext('2d').drawImage(canvas,0,y,canvas.width,h,0,0,canvas.width,h);
-      if(!first) pdf.addPage();
-      pdf.addImage(part.toDataURL('image/jpeg',0.92),'JPEG',M,M,pw,h/pxPerMm);
-    }
-    return pdf.output('blob');
+    // 글씨가 선명하도록 3배로 그리되, 휴대폰·태블릿 캔버스 한도(약 1600만 화소)를 넘지 않게 줄인다
+    const w=clone.offsetWidth, h=clone.offsetHeight;
+    const scale=Math.max(1, Math.min(3, Math.sqrt(15000000/(w*h))));
+    const canvas=await html2canvas(clone,{scale,backgroundColor:'#ffffff',useCORS:true});
+    // 가장자리에 흰 여백을 둔다
+    const M=Math.round(24*scale);
+    const out=document.createElement('canvas'); out.width=canvas.width+M*2; out.height=canvas.height+M*2;
+    const ctx=out.getContext('2d'); ctx.fillStyle='#ffffff'; ctx.fillRect(0,0,out.width,out.height);
+    ctx.drawImage(canvas,M,M);
+    return await new Promise((res,rej)=>out.toBlob(b=>b?res(b):rej(new Error('blob')),'image/png'));
   } finally { holder.remove(); }
 }
 
@@ -415,23 +397,23 @@ $('m-ok').onclick=async()=>{
   if([...document.querySelectorAll('.final')].some(c=>!c.checked)){ $('m-msg').textContent='세 가지를 모두 확인하고 체크해 주세요.'; return; }
   const btn=$('m-ok'); btn.disabled=true; btn.textContent='만드는 중…'; $('m-msg').textContent='';
   try{
-    if(!window.html2canvas || !window.jspdf) throw {code:'lib'};
-    const blob=await makePdf();
+    if(!window.html2canvas) throw {code:'lib'};
+    const blob=await makeImage();
     const name=$('name').value.trim(), head=$('head').value.trim();
-    const filename=`${school||''}일보_${name}_${head.slice(0,15)}.pdf`.replace(/[\\/:*?"<>|]/g,'');
+    const filename=`${school||''}일보_${name}_${head.slice(0,15)}.png`.replace(/[\\/:*?"<>|]/g,'');
     if(downloads){ await downloads.save({filename, data:blob}); }
     else { const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=filename; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),5000); }
     close('m-check');
-    $('done-t').textContent='PDF로 저장했어요!';
-    $('done-msg').textContent=`${name} 기자님의 「${head}」 기사를 PDF로 저장했어요.`;
+    $('done-t').textContent='그림으로 저장했어요!';
+    $('done-msg').textContent=`${name} 기자님의 「${head}」 기사를 그림 파일(PNG)로 저장했어요.`;
     open('m-done');
   }catch(e){
     const c=e&&e.code;
     $('m-msg').textContent = c==='declined' ? '저장을 취소했어요. 다시 누르면 저장할 수 있어요.'
       : c==='rate_limited' ? '저장 창이 이미 열려 있어요. 잠시 후 다시 눌러 주세요.'
-      : c==='lib' ? 'PDF 도구를 불러오지 못했어요. 인터넷 연결을 확인하고 새로고침해 주세요.'
-      : '이 화면에서는 PDF 저장을 할 수 없어요. 선생님께 알려 주세요.';
-  }finally{ btn.disabled=false; btn.textContent='PDF 저장'; }
+      : c==='lib' ? '그림 저장 도구를 불러오지 못했어요. 인터넷 연결을 확인하고 새로고침해 주세요.'
+      : '이 화면에서는 그림 저장을 할 수 없어요. 선생님께 알려 주세요.';
+  }finally{ btn.disabled=false; btn.textContent='그림 저장'; }
 };
 $('d-close').onclick=()=>close('m-done');
 document.querySelectorAll('.modal').forEach(m=>m.addEventListener('click',e=>{if(e.target===m && m.id!=='m-school')m.classList.remove('open');}));
