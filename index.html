@@ -85,6 +85,16 @@
   .bar .who{display:flex;align-items:center;gap:10px;font-weight:800}
   .bar input{width:220px}
   .bar .status{color:var(--muted);font-size:15px}
+  /* 저장 버튼은 하단 가운데 (오른쪽 아래 호스팅 로고에 가리지 않게) */
+  .bar{display:grid;grid-template-columns:1fr auto 1fr;grid-template-areas:"who btn status"}
+  .bar .who{grid-area:who;justify-self:start}
+  .bar #submit{grid-area:btn;justify-self:center;margin:0}
+  .bar .status{grid-area:status;justify-self:start;padding-left:8px}
+  @media (max-width:700px){
+    .bar{grid-template-columns:1fr;grid-template-areas:"who" "btn" "status";justify-items:center;gap:8px;padding:10px 16px}
+    .bar .who{justify-self:center}.bar .status{justify-self:center;padding-left:0}
+    main{padding-bottom:190px}
+  }
   .btn{font-family:"Jua",sans-serif;font-size:22px;border:0;border-radius:14px;padding:12px 34px;cursor:pointer}
   .btn.primary{background:var(--navy);color:#fff;margin-left:auto}
   .btn.primary:hover{background:#16294a}
